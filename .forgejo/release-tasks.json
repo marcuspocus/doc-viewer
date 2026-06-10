@@ -1,0 +1,45 @@
+{
+  "version": 1,
+  "note": "Internal release tasks for the private Forgejo workspace. Do not publish to GitHub or npmjs packages.",
+  "tasks": [
+    {
+      "id": "release.forgejo.publish",
+      "title": "Publish to Forgejo Packages",
+      "group": "Release Forgejo",
+      "description": "Publish to the configured @yieldcraft registry in this developer environment.",
+      "command": "npm publish",
+      "confirm": true
+    },
+    {
+      "id": "release.bump.patch",
+      "title": "Bump Patch",
+      "group": "Release Forgejo",
+      "description": "Bump patch version and create a git tag.",
+      "command": "npm version patch",
+      "confirm": true
+    },
+    {
+      "id": "public-npm.login",
+      "title": "Login to npmjs.com",
+      "group": "RELEASE PUBLIC NPM",
+      "description": "Authenticate npm CLI against npmjs.com before publishing the public package.",
+      "command": "tools/scripts/npmjs-login.sh",
+      "confirm": true
+    },
+    {
+      "id": "public-npm.publish",
+      "title": "Publish to npmjs.com",
+      "group": "RELEASE PUBLIC NPM",
+      "description": "Safely publish the current package version to npmjs.com using a temporary scoped registry override, dry-run, and anti-leak scan.",
+      "command": "tools/scripts/npmjs-publish.sh",
+      "confirm": true
+    },
+    {
+      "id": "public-npm.verify",
+      "title": "Verify npmjs.com Package",
+      "group": "RELEASE PUBLIC NPM",
+      "description": "Verify the current package version on npmjs.com using a temporary scoped registry override.",
+      "command": "tools/scripts/npmjs-verify.sh"
+    }
+  ]
+}

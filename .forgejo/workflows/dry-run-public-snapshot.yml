@@ -1,0 +1,60 @@
+name: Dry-run public snapshot
+
+on:
+  workflow_dispatch:
+
+jobs:
+  dry-run-public-snapshot:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout private Forgejo source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build public snapshot without pushing
+        run: |
+          set -euo pipefail
+
+          VERSION="$(node -p "require('./package.json').version")"
+          RELEASE_TAG="v${VERSION}"
+          echo "Dry-run public snapshot for ${RELEASE_TAG}"
+
+          SNAPSHOT="$(mktemp -d)"
+          mkdir -p "$SNAPSHOT/.pi-web" "$SNAPSHOT/.github/workflows" "$SNAPSHOT/docs"
+
+          cp README.md "$SNAPSHOT/"
+          cp AGENTS.md "$SNAPSHOT/"
+          cp package.json "$SNAPSHOT/"
+          [ -f package-lock.json ] && cp package-lock.json "$SNAPSHOT/"
+          cp pi-web-plugin.js "$SNAPSHOT/"
+          cp .gitignore "$SNAPSHOT/"
+          cp docs/*.md "$SNAPSHOT/docs/"
+          cp .pi-web/tasks.json "$SNAPSHOT/.pi-web/tasks.json"
+          cp .github/workflows/release.yml "$SNAPSHOT/.github/workflows/release.yml"
+
+          echo "Public snapshot files:"
+          find "$SNAPSHOT" -type f | sed "s#^$SNAPSHOT/##" | sort
+
+          echo "Running anti-leak scan..."
+          if grep -RInE 'git\.taila|git\.yieldcraft|backend:|Forgejo Packages|NPMJS_TOKEN|GH_SYNC_TOKEN|api/packages/.*/npm' "$SNAPSHOT"; then
+            echo "Private/internal string found in public snapshot" >&2
+            exit 1
+          fi
+
+          echo "Validating npm package contents from snapshot..."
+          cd "$SNAPSHOT"
+          npm pack --dry-run
+
+          echo "Creating local-only git commit/tag in temp snapshot..."
+          git init -b main
+          git config user.name "YieldCraft Release Bot"
+          git config user.email "marcus@yieldcraft.io"
+          git add .
+          git commit -m "release: ${RELEASE_TAG}"
+          git tag "${RELEASE_TAG}"
+
+          echo "Dry-run OK. Would push:"
+          echo "  GitHub main -> force update"
+          echo "  GitHub tag ${RELEASE_TAG} -> force update"
+          echo "No external push or publish was performed."

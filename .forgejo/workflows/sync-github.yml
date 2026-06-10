@@ -1,0 +1,60 @@
+name: Sync clean public snapshot to GitHub
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  sync-github:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout private Forgejo source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build and push clean GitHub snapshot
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          GH_SYNC_TOKEN: ${{ secrets.GH_SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          git checkout --force "refs/tags/$RELEASE_TAG"
+
+          VERSION="$(node -p "require('./package.json').version")"
+          test "$RELEASE_TAG" = "v$VERSION" || {
+            echo "Tag $RELEASE_TAG does not match package version $VERSION" >&2
+            exit 1
+          }
+
+          SNAPSHOT="$(mktemp -d)"
+          mkdir -p "$SNAPSHOT/.pi-web" "$SNAPSHOT/.github/workflows" "$SNAPSHOT/docs"
+
+          cp README.md "$SNAPSHOT/"
+          cp AGENTS.md "$SNAPSHOT/"
+          cp package.json "$SNAPSHOT/"
+          [ -f package-lock.json ] && cp package-lock.json "$SNAPSHOT/"
+          cp pi-web-plugin.js "$SNAPSHOT/"
+          cp .gitignore "$SNAPSHOT/"
+          cp docs/*.md "$SNAPSHOT/docs/"
+          cp .pi-web/tasks.json "$SNAPSHOT/.pi-web/tasks.json"
+          cp .github/workflows/release.yml "$SNAPSHOT/.github/workflows/release.yml"
+
+          if grep -RInE 'git\.taila|git\.yieldcraft|backend:|Forgejo Packages|NPMJS_TOKEN|GH_SYNC_TOKEN|api/packages/.*/npm' "$SNAPSHOT"; then
+            echo "Private/internal string found in public snapshot" >&2
+            exit 1
+          fi
+
+          cd "$SNAPSHOT"
+          git init -b main
+          git config user.name "YieldCraft Release Bot"
+          git config user.email "marcus@yieldcraft.io"
+          git add .
+          git commit -m "release: $RELEASE_TAG"
+          git tag "$RELEASE_TAG"
+          git remote add github "https://x-access-token:${GH_SYNC_TOKEN}@github.com/marcuspocus/doc-viewer.git"
+          git push github main --force
+          git push github "$RELEASE_TAG" --force

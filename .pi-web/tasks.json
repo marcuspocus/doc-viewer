@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "tasks": [
+    {
+      "id": "dev.link",
+      "title": "Link Plugin",
+      "group": "Development",
+      "description": "Symlink this plugin into ~/.pi-web/plugins/ for local dev. Hard-reload the browser tab after.",
+      "command": "npm run dev:link"
+    },
+    {
+      "id": "dev.unlink",
+      "title": "Unlink Plugin",
+      "group": "Development",
+      "description": "Remove the symlink from ~/.pi-web/plugins/.",
+      "command": "npm run dev:unlink"
+    },
+    {
+      "id": "dev.restart",
+      "title": "Relink (unlink + link)",
+      "group": "Development",
+      "description": "Remove then re-create the symlink — useful after switching branches.",
+      "command": "npm run dev:unlink; npm run dev:link"
+    },
+    {
+      "id": "install.global",
+      "title": "Install from npm",
+      "group": "Install",
+      "description": "Install the published public package globally and symlink it into pi-web plugins.",
+      "command": "npm install -g @yieldcraft/doc-viewer && ln -sf $(node -e \"console.log(require.resolve('@yieldcraft/doc-viewer/..'))\") ~/.pi-web/plugins/doc-viewer",
+      "confirm": true
+    },
+    {
+      "id": "check.link",
+      "title": "Check Plugin Install",
+      "group": "Diagnostics",
+      "description": "Verify the plugin symlink exists in ~/.pi-web/plugins/.",
+      "command": "ls -la ~/.pi-web/plugins/doc-viewer 2>/dev/null || echo 'Plugin symlink not found'"
+    }
+  ]
+}
