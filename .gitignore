@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Build / package outputs
+dist/
+build/
+coverage/
+*.tsbuildinfo
+*.tgz
+
+# Temporary / generated work files
+*.tmp
+*.temp
+*-wip.js
+docs/tmp/
+
+# Local paste/dev artifacts
+.pi-paste/
+
+# Dev symlink artifact (created by npm run dev:link)
+doc-viewer
