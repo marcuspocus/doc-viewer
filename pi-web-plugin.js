@@ -172,6 +172,7 @@ function buildDirectoryTree(files) {
 }
 
 function displayName(f) {
+  if (f.name?.toLowerCase() === "index.md") return "Index";
   const title = fileTitles.get(f.path);
   if (title) return title;
   return f.path.replace(/^docs\//, "");
@@ -181,6 +182,21 @@ function fullWorkspacePath(context, relativePath) {
   const base = String(context?.workspace?.path ?? "").replace(/\/+$/, "");
   const rel = String(relativePath ?? "").replace(/^\/+/, "");
   return base ? `${base}/${rel}` : rel;
+}
+
+function resolveDocLink(href, fromPath = currentFile) {
+  if (!href || href.startsWith("#") || /^[a-z][a-z0-9+.-]*:/i.test(href)) return null;
+  const [rawPath] = href.split("#");
+  if (!rawPath || !isMarkdownFile(rawPath)) return null;
+  const baseDir = fromPath ? dirname(fromPath) : DOCS_DIR;
+  const joined = rawPath.startsWith("/") ? rawPath.slice(1) : `${baseDir}/${rawPath}`;
+  const parts = [];
+  for (const part of joined.split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") parts.pop();
+    else parts.push(part);
+  }
+  return parts.join("/");
 }
 
 function fileIcon(f) {
@@ -269,6 +285,26 @@ async function ensureAllFileContents(context) {
     if (!fileContents.has(f.path)) promises.push(readFileContent(f.path, context));
   }
   if (promises.length > 0) await Promise.all(promises);
+}
+
+function wireDocumentLinks(root, context) {
+  if (!root) return;
+  root.querySelectorAll('a[href]').forEach(link => {
+    const targetPath = resolveDocLink(link.getAttribute('href'));
+    if (!targetPath) return;
+    if (!fileTree?.some(f => f.path === targetPath)) return;
+    link.removeAttribute('target');
+    link.onclick = (event) => {
+      event.preventDefault();
+      if (mode === "edit") return;
+      currentFile = targetPath;
+      mode = "view";
+      querySelectorAllDeep(".dv-toolbar-search").forEach(i => { i.value = ""; });
+      updateSidebarActive();
+      updateToolbarState();
+      renderFileContent(context);
+    };
+  });
 }
 
 function renderSearchResults(results, query) {
@@ -384,7 +420,7 @@ function renderMarkdown(text) {
 
     if (line.includes("|") && li + 1 < lines.length && /^\s*\|?[\s:-]+\|/.test(lines[li + 1] ?? "")) {
       if (inList) { html += listType === "ul" ? "</ul>" : "</ol>"; inList = false; }
-      const tableResult = renderTable(lines, li);
+      const tableResult = renderTable(lines, li, codeBlockMap);
       if (tableResult) { html += tableResult.html; li = tableResult.endIndex; continue; }
     }
 
@@ -436,7 +472,7 @@ function renderCodeBlock(lang, code) {
   return `<div class="doc-viewer-code-block"><div class="code-header">${langLabel}${copyBtn}</div><pre><code class="language-${lang || "text"}">${escapedCode}</code></pre></div>`;
 }
 
-function renderTable(lines, startIndex) {
+function renderTable(lines, startIndex, codeBlockMap = new Map()) {
   const rows = [];
   let i = startIndex;
   while (i < lines.length && lines[i].includes("|")) {
@@ -449,7 +485,7 @@ function renderTable(lines, startIndex) {
   for (let r = 0; r < rows.length; r++) {
     if (r === 1 && rows[r].every(c => /^[:\-\s]+$/.test(c))) continue;
     const tag = r === 0 ? "th" : "td";
-    html += "<tr>" + rows[r].map(c => `<${tag}>${c}</${tag}>`).join("") + "</tr>";
+    html += "<tr>" + rows[r].map(c => `<${tag}>${formatInlineMarkdown(c, codeBlockMap)}</${tag}>`).join("") + "</tr>";
   }
   html += "</table>";
   return { html, endIndex: i - 1 };
@@ -461,38 +497,6 @@ function slugify(text) {
 
 function escapeHtml(text) {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-}
-
-// ── TOC ────────────────────────────────────────────────────────────────────
-function extractToc(html) {
-  const headings = [];
-  const re = /<h(\d)\s+id="([^"]+)">(.+?)<\/h\1>/g;
-  let match;
-  while ((match = re.exec(html)) !== null) {
-    headings.push({ level: parseInt(match[1]), id: match[2], text: stripTags(match[3]) });
-  }
-  return headings;
-}
-
-function stripTags(html) {
-  const tmp = document.createElement("div");
-  tmp.innerHTML = html;
-  return tmp.textContent ?? "";
-}
-
-function renderTableOfContents(headings) {
-  if (headings.length === 0) return "";
-  let html = '<nav class="doc-viewer-toc"><strong>Contents</strong><ul>';
-  let prevLevel = 0;
-  for (const h of headings) {
-    if (h.level > prevLevel) { for (let j = prevLevel; j < h.level - 1; j++) html += "<ul>"; }
-    else if (h.level < prevLevel) { for (let j = h.level; j < prevLevel; j++) html += "</ul>"; }
-    html += `<li><a href="#${h.id}">${h.text}</a></li>`;
-    prevLevel = h.level;
-  }
-  for (let j = 1; j < prevLevel; j++) html += "</ul>";
-  html += "</ul></nav>";
-  return html;
 }
 
 // ── Mermaid ────────────────────────────────────────────────────────────────
@@ -518,8 +522,10 @@ async function ensureMermaid() {
   });
 }
 
-async function renderMermaidDiagrams() {
-  const containers = querySelectorAllDeep(".doc-viewer-mermaid");
+async function renderMermaidDiagrams(root) {
+  const scope = root?.isConnected ? root : activeElement(".doc-viewer-content");
+  if (!scope) return;
+  const containers = [...scope.querySelectorAll(".doc-viewer-mermaid")];
   if (containers.length === 0) return;
   const loaded = await ensureMermaid();
   if (!loaded) {
@@ -790,14 +796,6 @@ section.viewer.doc-viewer-focus-panel{position:fixed!important;left:0!important;
 .doc-viewer-table th{background:linear-gradient(180deg,#f8fafc 0%,#eef2f7 100%);font-weight:700;font-size:12.5px;text-transform:uppercase;letter-spacing:.04em;color:#475569}
 .doc-viewer-table tr:hover td{background:#f8fbff}
 
-/* Table of Contents */
-.doc-viewer-toc{margin:0 0 1.5em;padding:12px 16px;border:1px solid var(--dv-paper-border);border-radius:8px;background:#f8fafc;font-size:13px;box-shadow:0 2px 8px rgba(15,23,42,.06)}
-.doc-viewer-toc strong{display:block;margin-bottom:8px;color:#111827;font-size:13.5px;font-weight:750}
-.doc-viewer-toc ul{padding-left:1.3em;margin:3px 0}
-.doc-viewer-toc li{margin:4px 0;color:var(--dv-paper-text)}
-.doc-viewer-toc a{color:#475569;text-decoration:none;transition:color .12s ease}
-.doc-viewer-toc a:hover{color:var(--dv-paper-accent)}
-
 /* Search results */
 .dv-search{padding:8px}
 .dv-search-meta{font-size:13px;color:var(--dv-paper-muted);margin-bottom:16px;padding-bottom:8px;border-bottom:1px solid var(--dv-paper-border)}
@@ -838,21 +836,11 @@ const plugin = {
   name: "Doc Viewer",
 
   activate: ({ html, svg }) => {
-    const existingStyle = document.getElementById("doc-viewer-styles");
-    if (existingStyle) {
-      // Always refresh CSS on plugin reload; pi-web can keep old browser state alive.
-      existingStyle.textContent = CSS;
-    } else {
-      const s = document.createElement("style");
-      s.id = "doc-viewer-styles";
-      s.textContent = CSS;
-      document.head.appendChild(s);
-    }
-
+    // Styles are scoped inside the panel template. Remove stale global CSS from older builds
+    // so doc-viewer cannot affect other pi-web panels such as Terminal.
+    document.getElementById("doc-viewer-styles")?.remove();
     return {
       deactivate: () => {
-        const styleEl = document.getElementById("doc-viewer-styles");
-        if (styleEl) styleEl.remove();
         fileTree = null; fileTreeKey = null; currentFile = null;
         renderedFiles.clear(); fileContents.clear(); fileTitles.clear();
         editBackup = null; editDraft = null; mode = "view";
@@ -915,18 +903,23 @@ const plugin = {
               const hasTree = fileTree !== null;
 
               if (!hasTree && !treeFetchPromise) {
+                const fetchKey = key;
                 treeFetchPromise = fetchDocsTree(context).finally(() => {
                   treeFetchPromise = null;
-                  if (panelContext !== context) return;
-                  requestAnimationFrame(() => renderPanelDOM(context));
+                  if (!panelContext || treeKey(panelContext) !== fetchKey) return;
+                  requestAnimationFrame(() => renderPanelDOM(panelContext));
                 });
               }
 
-              // Always schedule a DOM pass after the lit shell is mounted. Without this,
+              // Always schedule DOM passes after the lit shell is mounted. Without this,
               // fast cached fetches can complete before the panel DOM exists and leave the tree empty.
-              queueMicrotask(() => requestAnimationFrame(() => {
-                if (panelContext === context) renderPanelDOM(context);
-              }));
+              const renderKey = key;
+              const schedulePanelRender = () => {
+                if (!panelContext || treeKey(panelContext) !== renderKey) return;
+                renderPanelDOM(panelContext);
+              };
+              queueMicrotask(() => requestAnimationFrame(schedulePanelRender));
+              window.setTimeout(() => requestAnimationFrame(schedulePanelRender), 120);
 
               return html`
                 <style>${CSS}</style>
@@ -1203,9 +1196,6 @@ function enterEditMode() {
   mode = "edit";
   updateToolbarState();
   ensureEditModeMounted(true);
-  for (const delay of [80, 300, 1000, 3000]) {
-    window.setTimeout(() => ensureEditModeMounted(false), delay);
-  }
 }
 
 function ensureEditModeMounted(shouldFocus = false) {
@@ -1335,7 +1325,8 @@ function renderFileContent(context) {
     if (content.dataset.contentSignature !== signature) {
       content.dataset.contentSignature = signature;
       content.innerHTML = cached;
-      requestAnimationFrame(() => setTimeout(renderMermaidDiagrams, 50));
+      wireDocumentLinks(content, context);
+      requestAnimationFrame(() => setTimeout(() => renderMermaidDiagrams(content), 50));
     }
     return;
   }
@@ -1354,9 +1345,7 @@ async function loadAndRenderFile(path, context, contentEl) {
     renderedFiles.set(path, '<p style="color:var(--pi-error,#f85149);">⚠️ Could not read file.</p>');
   } else {
     const rendered = renderMarkdown(text);
-    const headings = extractToc(rendered);
-    const toc = renderTableOfContents(headings);
-    renderedFiles.set(path, toc + rendered);
+    renderedFiles.set(path, rendered);
   }
 
   if (currentFile !== path || mode !== "view") return;
@@ -1367,7 +1356,8 @@ async function loadAndRenderFile(path, context, contentEl) {
   if (el.dataset.contentSignature !== signature) {
     el.dataset.contentSignature = signature;
     el.innerHTML = rendered;
-    requestAnimationFrame(() => setTimeout(renderMermaidDiagrams, 50));
+    wireDocumentLinks(el, context);
+    requestAnimationFrame(() => setTimeout(() => renderMermaidDiagrams(el), 50));
   }
 }
 

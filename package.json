@@ -1,6 +1,6 @@
 {
   "name": "@yieldcraft/doc-viewer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Pi-web plugin to browse and render workspace docs/ markdown files with Mermaid diagram support",
   "type": "module",
   "piWeb": {
