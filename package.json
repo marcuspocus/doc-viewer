@@ -1,0 +1,40 @@
+{
+  "name": "@yieldcraft/doc-viewer",
+  "version": "0.1.4",
+  "description": "Pi-web plugin to browse and render workspace docs/ markdown files with Mermaid diagram support",
+  "type": "module",
+  "piWeb": {
+    "plugins": [
+      {
+        "id": "doc-viewer",
+        "module": "pi-web-plugin.js"
+      }
+    ]
+  },
+  "keywords": [
+    "pi-package",
+    "pi-web",
+    "pi-web-plugin",
+    "markdown",
+    "mermaid",
+    "documentation",
+    "viewer",
+    "docs"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/marcuspocus/doc-viewer"
+  },
+  "license": "MIT",
+  "scripts": {
+    "dev:link": "mkdir -p ~/.pi-web/plugins && ln -sf $(pwd) ~/.pi-web/plugins/doc-viewer",
+    "dev:unlink": "rm -f ~/.pi-web/plugins/doc-viewer"
+  },
+  "files": [
+    "pi-web-plugin.js",
+    "README.md",
+    "AGENTS.md",
+    "docs/*.md",
+    ".pi-web/tasks.json"
+  ]
+}
